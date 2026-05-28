@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, master, claude/charitable-giving-tracker-ggcbv]
+    branches: [main, master, claude/admiring-ptolemy-VdedP, claude/charitable-giving-tracker-ggcbv]
 
 permissions:
   contents: read
