@@ -1,194 +1,233 @@
-import { useState } from 'react';
-import type { MonthRecord, Recipient, Donation } from './types';
-import { storage } from './utils/storage';
-import { calcMonthSummary } from './utils/calculations';
+import { useState, useEffect } from 'react';
+import {
+  Heart, LayoutDashboard, Users, Wallet, Store,
+  CheckSquare, Clock, Grid3x3, Settings,
+} from 'lucide-react';
+import type {
+  Tab, AppData, Guest, BudgetItem, Vendor, Task, TimelineEvent, SeatingTable, WeddingDetails,
+} from './types';
+import { loadData, saveData, generateId } from './utils/storage';
 import Dashboard from './components/Dashboard';
-import History from './components/History';
-import Recipients from './components/Recipients';
-import MonthForm from './components/MonthForm';
-import DonationForm from './components/DonationForm';
-import Modal from './components/Modal';
+import Guests from './components/Guests';
+import Budget from './components/Budget';
+import Vendors from './components/Vendors';
+import Tasks from './components/Tasks';
+import Timeline from './components/Timeline';
+import Seating from './components/Seating';
+import WeddingSetup from './components/WeddingSetup';
 import './index.css';
 
-type Tab = 'dashboard' | 'history' | 'recipients';
+const NAV = [
+  { id: 'dashboard' as Tab, label: 'ראשי', icon: LayoutDashboard },
+  { id: 'guests' as Tab, label: 'מוזמנים', icon: Users },
+  { id: 'budget' as Tab, label: 'תקציב', icon: Wallet },
+  { id: 'vendors' as Tab, label: 'ספקים', icon: Store },
+  { id: 'tasks' as Tab, label: 'משימות', icon: CheckSquare },
+  { id: 'timeline' as Tab, label: 'לוח יום', icon: Clock },
+  { id: 'seating' as Tab, label: 'ישיבה', icon: Grid3x3 },
+  { id: 'setup' as Tab, label: 'הגדרות', icon: Settings },
+];
 
 export default function App() {
-  const [months, setMonths] = useState<MonthRecord[]>(() => storage.getMonths());
-  const [recipients, setRecipients] = useState<Recipient[]>(() => storage.getRecipients());
-  const [donations, setDonations] = useState<Donation[]>(() => storage.getDonations());
+  const [data, setData] = useState<AppData>(() => loadData());
   const [tab, setTab] = useState<Tab>('dashboard');
+  const isFirstTime = !data.weddingDetails.brideName;
 
-  const [showMonthForm, setShowMonthForm] = useState(false);
-  const [editingMonth, setEditingMonth] = useState<MonthRecord | undefined>();
-  const [showDonationForm, setShowDonationForm] = useState(false);
-  const [donationForMonth, setDonationForMonth] = useState<string | undefined>();
+  useEffect(() => {
+    saveData(data);
+  }, [data]);
 
-  const summaries = months.map((m) => calcMonthSummary(m, donations));
+  const update = (patch: Partial<AppData>) =>
+    setData(prev => ({ ...prev, ...patch }));
 
-  function saveMonth(r: MonthRecord) {
-    const updated = months.some((m) => m.id === r.id)
-      ? months.map((m) => (m.id === r.id ? r : m))
-      : [...months, r];
-    setMonths(updated);
-    storage.saveMonths(updated);
-    setShowMonthForm(false);
-    setEditingMonth(undefined);
+  // Wedding details
+  const saveWeddingDetails = (details: WeddingDetails) => {
+    update({ weddingDetails: details });
+    if (tab === 'setup') setTab('dashboard');
+  };
+
+  // Guests
+  const addGuest = (g: Omit<Guest, 'id'>) =>
+    update({ guests: [...data.guests, { ...g, id: generateId() }] });
+  const updateGuest = (id: string, patch: Partial<Guest>) =>
+    update({ guests: data.guests.map(g => g.id === id ? { ...g, ...patch } : g) });
+  const deleteGuest = (id: string) =>
+    update({ guests: data.guests.filter(g => g.id !== id) });
+
+  // Budget
+  const addBudgetItem = (item: Omit<BudgetItem, 'id'>) =>
+    update({ budgetItems: [...data.budgetItems, { ...item, id: generateId() }] });
+  const updateBudgetItem = (id: string, patch: Partial<BudgetItem>) =>
+    update({ budgetItems: data.budgetItems.map(b => b.id === id ? { ...b, ...patch } : b) });
+  const deleteBudgetItem = (id: string) =>
+    update({ budgetItems: data.budgetItems.filter(b => b.id !== id) });
+  const updateTotalBudget = (amount: number) =>
+    update({ weddingDetails: { ...data.weddingDetails, totalBudget: amount } });
+
+  // Vendors
+  const addVendor = (v: Omit<Vendor, 'id'>) =>
+    update({ vendors: [...data.vendors, { ...v, id: generateId() }] });
+  const updateVendor = (id: string, patch: Partial<Vendor>) =>
+    update({ vendors: data.vendors.map(v => v.id === id ? { ...v, ...patch } : v) });
+  const deleteVendor = (id: string) =>
+    update({ vendors: data.vendors.filter(v => v.id !== id) });
+
+  // Tasks
+  const addTask = (t: Omit<Task, 'id'>) =>
+    update({ tasks: [...data.tasks, { ...t, id: generateId() }] });
+  const updateTask = (id: string, patch: Partial<Task>) =>
+    update({ tasks: data.tasks.map(t => t.id === id ? { ...t, ...patch } : t) });
+  const deleteTask = (id: string) =>
+    update({ tasks: data.tasks.filter(t => t.id !== id) });
+
+  // Timeline
+  const addEvent = (e: Omit<TimelineEvent, 'id'>) =>
+    update({ timelineEvents: [...data.timelineEvents, { ...e, id: generateId() }] });
+  const updateEvent = (id: string, patch: Partial<TimelineEvent>) =>
+    update({ timelineEvents: data.timelineEvents.map(e => e.id === id ? { ...e, ...patch } : e) });
+  const deleteEvent = (id: string) =>
+    update({ timelineEvents: data.timelineEvents.filter(e => e.id !== id) });
+
+  // Tables
+  const addTable = (t: Omit<SeatingTable, 'id'>) =>
+    update({ tables: [...data.tables, { ...t, id: generateId() }] });
+  const updateTable = (id: string, patch: Partial<SeatingTable>) =>
+    update({ tables: data.tables.map(t => t.id === id ? { ...t, ...patch } : t) });
+  const deleteTable = (id: string) =>
+    update({ tables: data.tables.filter(t => t.id !== id) });
+  const assignGuest = (guestId: string, tableId: string | undefined) =>
+    updateGuest(guestId, { tableId });
+
+  if (isFirstTime) {
+    return (
+      <div className="min-h-screen" style={{ background: '#fdf2f8' }}>
+        <div className="max-w-lg mx-auto px-4 py-6">
+          <WeddingSetup details={data.weddingDetails} onSave={saveWeddingDetails} isFirstTime />
+        </div>
+      </div>
+    );
   }
 
-  function deleteMonth(id: string) {
-    if (!confirm('למחוק את החודש הזה? תרומות הקשורות אליו לא יימחקו.')) return;
-    const updated = months.filter((m) => m.id !== id);
-    setMonths(updated);
-    storage.saveMonths(updated);
-  }
-
-  function saveDonation(d: Donation) {
-    let finalDonation = d;
-    if (d.recipientId.startsWith('new:')) {
-      const name = d.recipientId.slice(4);
-      const existing = recipients.find((r) => r.name === name && r.type === d.category);
-      if (!existing) {
-        const newR: Recipient = { id: Date.now().toString(), name, type: d.category };
-        const updatedR = [...recipients, newR];
-        setRecipients(updatedR);
-        storage.saveRecipients(updatedR);
-        finalDonation = { ...d, recipientId: newR.id };
-      } else {
-        finalDonation = { ...d, recipientId: existing.id };
-      }
-    }
-    const updated = [...donations, finalDonation];
-    setDonations(updated);
-    storage.saveDonations(updated);
-    setShowDonationForm(false);
-    setDonationForMonth(undefined);
-  }
-
-  function deleteDonation(id: string) {
-    if (!confirm('למחוק תרומה זו?')) return;
-    const updated = donations.filter((d) => d.id !== id);
-    setDonations(updated);
-    storage.saveDonations(updated);
-  }
-
-  function addRecipient(r: Recipient) {
-    const updated = [...recipients, r];
-    setRecipients(updated);
-    storage.saveRecipients(updated);
-  }
-
-  function deleteRecipient(id: string) {
-    if (!confirm('למחוק מקבל זה?')) return;
-    const updated = recipients.filter((r) => r.id !== id);
-    setRecipients(updated);
-    storage.saveRecipients(updated);
-  }
-
-  function openAddDonation(forMonth?: string) {
-    setDonationForMonth(forMonth);
-    setShowDonationForm(true);
-  }
-
-  function openEditMonth(r: MonthRecord) {
-    setEditingMonth(r);
-    setShowMonthForm(true);
-  }
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'dashboard', label: 'לוח ראשי' },
-    { id: 'history', label: 'היסטוריה' },
-    { id: 'recipients', label: 'מקבלים' },
-  ];
+  const { brideName, groomName, weddingDate } = data.weddingDetails;
 
   return (
-    <div className="min-h-screen" style={{ background: '#f5f4ef' }}>
-      <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-4 py-3">
-          <h1 className="text-xl font-bold text-gray-800" style={{ margin: 0 }}>מעשרות וחומש</h1>
-          <p className="text-xs text-gray-400" style={{ margin: 0 }}>ניהול הפרשות לצדקה</p>
+    <div className="min-h-screen pb-20" style={{ background: '#fdf2f8' }}>
+      {/* Header */}
+      <header className="bg-white border-b border-rose-100 shadow-sm sticky top-0 z-20">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Heart size={20} className="text-rose-500 fill-rose-500" />
+            <div>
+              <div className="font-bold text-gray-800 text-sm leading-tight">
+                {brideName} & {groomName}
+              </div>
+              {weddingDate && (
+                <div className="text-xs text-gray-400">
+                  {new Date(weddingDate).toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </div>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => setTab('setup')}
+            className={`p-2 rounded-xl transition-colors ${tab === 'setup' ? 'bg-rose-100 text-rose-600' : 'text-gray-400 hover:bg-rose-50'}`}
+          >
+            <Settings size={18} />
+          </button>
         </div>
       </header>
 
-      <div className="bg-white border-b border-gray-100">
-        <div className="max-w-lg mx-auto px-4 flex gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.id
-                  ? 'border-emerald-600 text-emerald-700'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <main className="max-w-lg mx-auto px-4 py-5 pb-24">
+      {/* Main content */}
+      <main className="max-w-2xl mx-auto px-4 py-4">
         {tab === 'dashboard' && (
           <Dashboard
-            summaries={summaries}
-            onAddMonth={() => { setEditingMonth(undefined); setShowMonthForm(true); }}
-            onAddDonation={() => openAddDonation()}
+            weddingDetails={data.weddingDetails}
+            guests={data.guests}
+            budgetItems={data.budgetItems}
+            vendors={data.vendors}
+            tasks={data.tasks}
+            onNavigate={setTab}
           />
         )}
-        {tab === 'history' && (
-          <History
-            summaries={summaries}
-            donations={donations}
-            recipients={recipients}
-            onEditMonth={openEditMonth}
-            onDeleteMonth={deleteMonth}
-            onDeleteDonation={deleteDonation}
-            onAddDonation={openAddDonation}
+        {tab === 'guests' && (
+          <Guests
+            guests={data.guests}
+            tables={data.tables}
+            onAdd={addGuest}
+            onUpdate={updateGuest}
+            onDelete={deleteGuest}
           />
         )}
-        {tab === 'recipients' && (
-          <Recipients
-            recipients={recipients}
-            onAdd={addRecipient}
-            onDelete={deleteRecipient}
+        {tab === 'budget' && (
+          <Budget
+            budgetItems={data.budgetItems}
+            totalBudget={data.weddingDetails.totalBudget}
+            onAdd={addBudgetItem}
+            onUpdate={updateBudgetItem}
+            onDelete={deleteBudgetItem}
+            onUpdateBudget={updateTotalBudget}
           />
+        )}
+        {tab === 'vendors' && (
+          <Vendors
+            vendors={data.vendors}
+            onAdd={addVendor}
+            onUpdate={updateVendor}
+            onDelete={deleteVendor}
+          />
+        )}
+        {tab === 'tasks' && (
+          <Tasks
+            tasks={data.tasks}
+            onAdd={addTask}
+            onUpdate={updateTask}
+            onDelete={deleteTask}
+          />
+        )}
+        {tab === 'timeline' && (
+          <Timeline
+            events={data.timelineEvents}
+            weddingDate={data.weddingDetails.weddingDate}
+            onAdd={addEvent}
+            onUpdate={updateEvent}
+            onDelete={deleteEvent}
+          />
+        )}
+        {tab === 'seating' && (
+          <Seating
+            tables={data.tables}
+            guests={data.guests}
+            onAddTable={addTable}
+            onUpdateTable={updateTable}
+            onDeleteTable={deleteTable}
+            onAssignGuest={assignGuest}
+          />
+        )}
+        {tab === 'setup' && (
+          <WeddingSetup details={data.weddingDetails} onSave={saveWeddingDetails} />
         )}
       </main>
 
-      {tab !== 'recipients' && (
-        <div className="fixed bottom-6 left-1/2 flex gap-3 z-10" style={{ transform: 'translateX(50%)' }}>
-          <button
-            onClick={() => { setEditingMonth(undefined); setShowMonthForm(true); }}
-            className="bg-emerald-600 text-white px-5 py-3 rounded-full shadow-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
-          >
-            + חודש
-          </button>
-          <button
-            onClick={() => openAddDonation()}
-            className="bg-blue-600 text-white px-5 py-3 rounded-full shadow-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            + תרומה
-          </button>
+      {/* Bottom navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-rose-100 z-20 shadow-lg">
+        <div className="max-w-2xl mx-auto px-2">
+          <div className="flex">
+            {NAV.slice(0, 7).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={`flex-1 flex flex-col items-center py-2 pt-2.5 transition-colors ${
+                  tab === id ? 'text-rose-600' : 'text-gray-400 hover:text-rose-400'
+                }`}
+              >
+                <Icon size={20} strokeWidth={tab === id ? 2.5 : 1.8} />
+                <span className={`text-[10px] mt-0.5 font-medium ${tab === id ? 'text-rose-600' : ''}`}>{label}</span>
+                {tab === id && <div className="w-4 h-0.5 bg-rose-500 rounded-full mt-0.5" />}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
-
-      <Modal open={showMonthForm} onClose={() => { setShowMonthForm(false); setEditingMonth(undefined); }}>
-        <MonthForm
-          existing={editingMonth}
-          onSave={saveMonth}
-          onCancel={() => { setShowMonthForm(false); setEditingMonth(undefined); }}
-        />
-      </Modal>
-
-      <Modal open={showDonationForm} onClose={() => { setShowDonationForm(false); setDonationForMonth(undefined); }}>
-        <DonationForm
-          months={months}
-          recipients={recipients}
-          defaultForMonth={donationForMonth}
-          onSave={saveDonation}
-          onCancel={() => { setShowDonationForm(false); setDonationForMonth(undefined); }}
-        />
-      </Modal>
+      </nav>
     </div>
   );
 }

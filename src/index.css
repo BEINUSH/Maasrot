@@ -8,6 +8,21 @@ body {
   margin: 0;
   direction: rtl;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: #f8f7f2;
+  background: #fdf2f8;
   color: #1a1a1a;
+}
+
+input, textarea, select {
+  direction: rtl;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #fdf2f8;
+}
+::-webkit-scrollbar-thumb {
+  background: #f9a8d4;
+  border-radius: 3px;
 }
