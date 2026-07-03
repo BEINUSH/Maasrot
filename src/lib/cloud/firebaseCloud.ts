@@ -7,13 +7,6 @@ export interface FirebaseWebConfig {
   appId: string;
 }
 
-export interface CloudAuthState {
-  configured: boolean;
-  status: 'signed-out' | 'signing-in' | 'signed-in' | 'error';
-  email?: string;
-  error?: string;
-}
-
 const CONFIG_KEY = 'platoon-fitness-firebase-config';
 
 export function loadCloudConfig(): FirebaseWebConfig | undefined {

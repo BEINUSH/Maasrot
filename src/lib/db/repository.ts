@@ -16,7 +16,7 @@ import { todayISO } from '../date';
 import { STATUS_LABELS } from '../constants';
 import { createSeed } from './seed';
 import { FirestoreRepository } from './firestoreRepository';
-import type { CloudAuthState, FirebaseWebConfig } from '../cloud/firebaseCloud';
+import type { FirebaseWebConfig } from '../cloud/firebaseCloud';
 import {
   clearCloudConfig,
   loadCloudConfig,
@@ -25,6 +25,23 @@ import {
   signOutCloud,
   watchCloudAuth,
 } from '../cloud/firebaseCloud';
+import { AnonymousCloudRepository } from './anonymousCloudRepository';
+import {
+  clearAnonymousSyncId,
+  createAnonymousStore,
+  loadAnonymousSyncId,
+  readSyncIdFromUrl,
+  saveAnonymousSyncId,
+  shareLinkFor,
+} from '../cloud/anonymousCloud';
+
+export interface SyncState {
+  mode: 'local' | 'anonymous' | 'firebase';
+  status: 'idle' | 'connecting' | 'connected' | 'signed-out' | 'error';
+  email?: string;
+  shareLink?: string;
+  error?: string;
+}
 
 const STORAGE_KEY = 'platoon-fitness-db-v1';
 
@@ -304,29 +321,68 @@ class LocalStorageRepository {
   };
 }
 
-type Backend = LocalStorageRepository | FirestoreRepository;
+type Backend = LocalStorageRepository | FirestoreRepository | AnonymousCloudRepository;
 
 /**
  * Public facade. Every hook in the app talks to `repository` and never
- * knows whether data lives in LocalStorage or Firestore — the facade
- * swaps the active backend in place and re-notifies subscribers, and
- * additionally exposes a `cloud` namespace to drive the Settings UI and
- * the login gate.
+ * knows which backend is active — the facade swaps it in place and
+ * re-notifies subscribers, and exposes a `cloud` namespace to drive the
+ * Settings UI and the login gate.
+ *
+ * Priority on startup: an explicitly configured Firebase project (real
+ * auth, real security rules) always wins if present. Otherwise, to
+ * satisfy "zero setup, shared by default", the app auto-provisions an
+ * unauthenticated shared jsonblob.com store the very first time it runs
+ * anywhere with nothing configured — the resulting id is what needs to
+ * reach a second device (via the share link, e.g. pasted to Claude to
+ * forward). If that provisioning fails (offline, blocked network), it
+ * falls back to plain LocalStorage rather than breaking the app.
  */
 class RepositoryFacade {
   private active: Backend = new LocalStorageRepository();
   private dbListeners = new Set<() => void>();
-  private authListeners = new Set<() => void>();
-  private authState: CloudAuthState = { configured: false, status: 'signed-out' };
-  private config: FirebaseWebConfig | undefined = loadCloudConfig();
-  private unwatchAuth: (() => void) | undefined;
+  private syncListeners = new Set<() => void>();
+  private syncState: SyncState = { mode: 'local', status: 'idle' };
+  private firebaseConfig: FirebaseWebConfig | undefined = loadCloudConfig();
+  private unwatchFirebaseAuth: (() => void) | undefined;
   private unsubActiveBackend: (() => void) | undefined;
 
   constructor() {
     this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
-    if (this.config) {
-      this.authState = { configured: true, status: 'signing-in' };
-      void this.attachCloudAuthWatcher(this.config);
+    if (this.firebaseConfig) {
+      this.syncState = { mode: 'firebase', status: 'connecting' };
+      void this.attachFirebaseAuthWatcher(this.firebaseConfig);
+      return;
+    }
+
+    const urlSyncId = readSyncIdFromUrl();
+    const existingAnonId = loadAnonymousSyncId();
+    if (urlSyncId && urlSyncId !== existingAnonId) {
+      saveAnonymousSyncId(urlSyncId);
+      this.switchToAnonymous(urlSyncId);
+    } else if (existingAnonId) {
+      this.switchToAnonymous(existingAnonId);
+    } else {
+      void this.bootstrapAnonymousStore();
+    }
+  }
+
+  private async bootstrapAnonymousStore(): Promise<void> {
+    this.syncState = { mode: 'anonymous', status: 'connecting' };
+    this.notifySync();
+    try {
+      const seed = this.active.getSnapshot();
+      const id = await createAnonymousStore(seed);
+      saveAnonymousSyncId(id);
+      this.switchToAnonymous(id);
+    } catch (err) {
+      // No network / blocked / offline: keep working locally rather than break the app.
+      this.syncState = {
+        mode: 'local',
+        status: 'error',
+        error: err instanceof Error ? err.message : 'שגיאת חיבור לענן',
+      };
+      this.notifySync();
     }
   }
 
@@ -334,48 +390,49 @@ class RepositoryFacade {
     this.dbListeners.forEach((l) => l());
   }
 
-  private notifyAuth(): void {
-    this.authListeners.forEach((l) => l());
+  private notifySync(): void {
+    this.syncListeners.forEach((l) => l());
   }
 
-  private async attachCloudAuthWatcher(config: FirebaseWebConfig): Promise<void> {
+  private async attachFirebaseAuthWatcher(config: FirebaseWebConfig): Promise<void> {
     try {
-      this.unwatchAuth = await watchCloudAuth(config, (email) => {
+      this.unwatchFirebaseAuth = await watchCloudAuth(config, (email) => {
         if (email) {
-          this.authState = { configured: true, status: 'signed-in', email };
-          this.switchToCloud(config);
+          this.syncState = { mode: 'firebase', status: 'connected', email };
+          this.switchBackend(new FirestoreRepository(config, (message) => this.reportError(message)));
         } else {
-          this.authState = { configured: true, status: 'signed-out' };
-          this.switchToLocal();
+          this.syncState = { mode: 'firebase', status: 'signed-out' };
+          this.switchBackend(new LocalStorageRepository());
         }
-        this.notifyAuth();
+        this.notifySync();
       });
     } catch (err) {
-      this.authState = {
-        configured: true,
+      this.syncState = {
+        mode: 'firebase',
         status: 'error',
         error: err instanceof Error ? err.message : 'שגיאת חיבור לענן',
       };
-      this.notifyAuth();
+      this.notifySync();
     }
   }
 
-  private switchToCloud(config: FirebaseWebConfig): void {
-    if (this.active instanceof FirestoreRepository) return;
-    this.unsubActiveBackend?.();
-    this.active = new FirestoreRepository(config, (message) => {
-      this.authState = { ...this.authState, status: 'error', error: message };
-      this.notifyAuth();
-    });
-    this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
-    this.notifyDb();
+  private reportError(message: string): void {
+    this.syncState = { ...this.syncState, status: 'error', error: message };
+    this.notifySync();
   }
 
-  private switchToLocal(): void {
-    if (this.active instanceof LocalStorageRepository) return;
+  private switchToAnonymous(id: string): void {
+    this.switchBackend(new AnonymousCloudRepository(id, (message) => this.reportError(message)));
+    this.syncState = { mode: 'anonymous', status: 'connected', shareLink: shareLinkFor(id) };
+    this.notifySync();
+  }
+
+  private switchBackend(next: Backend): void {
     this.unsubActiveBackend?.();
-    (this.active as FirestoreRepository).dispose();
-    this.active = new LocalStorageRepository();
+    if (this.active instanceof FirestoreRepository || this.active instanceof AnonymousCloudRepository) {
+      this.active.dispose();
+    }
+    this.active = next;
     this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
     this.notifyDb();
   }
@@ -428,47 +485,57 @@ class RepositoryFacade {
 
   cloud = {
     subscribe: (listener: () => void): (() => void) => {
-      this.authListeners.add(listener);
-      return () => this.authListeners.delete(listener);
+      this.syncListeners.add(listener);
+      return () => this.syncListeners.delete(listener);
     },
-    getSnapshot: (): CloudAuthState => this.authState,
+    getSnapshot: (): SyncState => this.syncState,
 
-    configure: async (config: FirebaseWebConfig): Promise<void> => {
+    /** Switch from the default anonymous store to a properly authenticated Firebase project. */
+    configureFirebase: async (config: FirebaseWebConfig): Promise<void> => {
+      clearAnonymousSyncId();
       saveCloudConfig(config);
-      this.config = config;
-      this.authState = { configured: true, status: 'signing-in' };
-      this.notifyAuth();
-      this.unwatchAuth?.();
-      await this.attachCloudAuthWatcher(config);
+      this.firebaseConfig = config;
+      this.syncState = { mode: 'firebase', status: 'connecting' };
+      this.notifySync();
+      this.unwatchFirebaseAuth?.();
+      await this.attachFirebaseAuthWatcher(config);
     },
 
     signIn: async (email: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> => {
-      if (!this.config) return { ok: false, error: 'לא הוגדר חיבור לענן' };
-      this.authState = { ...this.authState, status: 'signing-in' };
-      this.notifyAuth();
-      const result = await signInCloud(this.config, email, password);
+      if (!this.firebaseConfig) return { ok: false, error: 'לא הוגדר חיבור לענן' };
+      this.syncState = { ...this.syncState, status: 'connecting' };
+      this.notifySync();
+      const result = await signInCloud(this.firebaseConfig, email, password);
       if (!result.ok) {
-        this.authState = { configured: true, status: 'error', error: result.error };
-        this.notifyAuth();
+        this.syncState = { mode: 'firebase', status: 'error', error: result.error };
+        this.notifySync();
       }
       return result;
     },
 
     signOut: async (): Promise<void> => {
-      if (!this.config) return;
-      await signOutCloud(this.config);
+      if (!this.firebaseConfig) return;
+      await signOutCloud(this.firebaseConfig);
     },
 
-    disable: (): void => {
-      this.unwatchAuth?.();
+    /** Drop the Firebase project and fall back to (re-)provisioning the zero-setup shared store. */
+    disableFirebase: (): void => {
+      this.unwatchFirebaseAuth?.();
       clearCloudConfig();
-      this.config = undefined;
-      this.authState = { configured: false, status: 'signed-out' };
-      this.switchToLocal();
-      this.notifyAuth();
+      this.firebaseConfig = undefined;
+      this.switchBackend(new LocalStorageRepository());
+      void this.bootstrapAnonymousStore();
+    },
+
+    /** Stop sharing entirely and keep only this device's local copy. */
+    disableAnonymous: (): void => {
+      clearAnonymousSyncId();
+      this.switchBackend(new LocalStorageRepository());
+      this.syncState = { mode: 'local', status: 'idle' };
+      this.notifySync();
     },
   };
 }
 
 export const repository = new RepositoryFacade();
-export type { FirebaseWebConfig, CloudAuthState } from '../cloud/firebaseCloud';
+export type { FirebaseWebConfig } from '../cloud/firebaseCloud';

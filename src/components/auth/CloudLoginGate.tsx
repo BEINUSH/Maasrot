@@ -41,9 +41,9 @@ function LoginScreen() {
         <Button
           type="submit"
           className="w-full"
-          disabled={auth.status === 'signing-in' || email.trim() === '' || password === ''}
+          disabled={auth.status === 'connecting' || email.trim() === '' || password === ''}
         >
-          {auth.status === 'signing-in' ? 'מתחבר…' : 'התחברות'}
+          {auth.status === 'connecting' ? 'מתחבר…' : 'התחברות'}
         </Button>
       </form>
     </div>
@@ -55,7 +55,7 @@ function LoadingScreen() {
     <div className="min-h-screen flex items-center justify-center" dir="rtl">
       <div className="flex flex-col items-center gap-3 text-ink3">
         <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-        <span className="text-sm font-semibold">טוען נתונים מהענן…</span>
+        <span className="text-sm font-semibold">טוען נתונים…</span>
       </div>
     </div>
   );
@@ -63,10 +63,11 @@ function LoadingScreen() {
 
 export function CloudLoginGate({ children }: CloudLoginGateProps) {
   const auth = useCloudAuth();
-  useDb(); // subscribes so the component re-renders once cloud data finishes loading
+  useDb(); // subscribes so the component re-renders once the active backend finishes loading
 
-  if (!auth.configured) return <>{children}</>;
-  if (auth.status !== 'signed-in') return <LoginScreen />;
+  // Only the Firebase path ever requires signing in — the default
+  // zero-setup anonymous store and plain local mode never gate the app.
+  if (auth.mode === 'firebase' && auth.status !== 'connected') return <LoginScreen />;
   if (!repository.isCloudDataReady()) return <LoadingScreen />;
   return <>{children}</>;
 }
