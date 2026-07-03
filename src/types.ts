@@ -1,116 +1,139 @@
-export type Tab = 'dashboard' | 'guests' | 'budget' | 'vendors' | 'tasks' | 'timeline' | 'seating' | 'setup';
+export type TeamId = 1 | 2 | 3;
+export type FitnessLevel = 'A' | 'B' | 'C';
+export type AttendanceStatus = 'present' | 'listener' | 'medical' | 'absent';
+export type TestPeriod = 'opening' | 'mid' | 'final';
+export type NoteType = 'coach' | 'general' | 'medical' | 'pain';
+export type TrainingType = 'run' | 'intervals' | 'tempo' | 'strength' | 'mobility' | 'stretching';
+export type ScoreEventType =
+  | 'attendance'
+  | 'mission'
+  | 'improvement'
+  | 'helping'
+  | 'leadership'
+  | 'excellence'
+  | 'manual';
 
-export type RSVPStatus = 'pending' | 'confirmed' | 'declined';
-export type MealPreference = 'regular' | 'vegetarian' | 'vegan' | 'gluten_free' | 'kosher';
-export type GuestGroup = 'family_bride' | 'family_groom' | 'friends_bride' | 'friends_groom' | 'work' | 'other';
-
-export interface Guest {
+export interface Cadet {
   id: string;
-  name: string;
-  phone?: string;
-  email?: string;
-  rsvp: RSVPStatus;
-  seats: number;
-  mealPreference: MealPreference;
-  group: GuestGroup;
-  tableId?: string;
-  isChild?: boolean;
-  notes?: string;
+  fullName: string;
+  team: TeamId;
+  fitnessLevel: FitnessLevel;
+  trainingGroup: string;
+  medicalProfile: string;
+  restrictions: string;
+  painNotes: string;
+  exempt: boolean;
+  phone: string;
+  email: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  joinDate: string;
 }
 
-export type ExpenseCategory =
-  | 'venue' | 'catering' | 'music' | 'photography' | 'videography'
-  | 'flowers' | 'invitations' | 'dress' | 'groom_attire' | 'rings'
-  | 'makeup' | 'honeymoon' | 'transportation' | 'accommodation'
-  | 'decoration' | 'cake' | 'other';
-
-export interface BudgetItem {
+export interface TrainingSession {
   id: string;
+  date: string;
   name: string;
-  category: ExpenseCategory;
-  estimatedAmount: number;
-  actualAmount: number;
-  paidAmount: number;
-  vendorId?: string;
-  notes?: string;
+  description?: string;
+  team?: TeamId;
 }
 
-export type VendorCategory =
-  | 'venue' | 'catering' | 'music' | 'photography' | 'videography'
-  | 'flowers' | 'makeup' | 'transportation' | 'decoration'
-  | 'invitations' | 'cake' | 'rabbi' | 'other';
-
-export type VendorStatus = 'researching' | 'contacted' | 'meeting' | 'contracted' | 'deposit_paid' | 'fully_paid';
-
-export interface Vendor {
+export interface AttendanceRecord {
   id: string;
-  name: string;
-  category: VendorCategory;
-  contactName?: string;
-  phone?: string;
-  email?: string;
-  website?: string;
-  status: VendorStatus;
-  totalPrice?: number;
-  depositAmount?: number;
-  depositPaid: boolean;
-  fullyPaid: boolean;
-  notes?: string;
-  rating?: number;
+  sessionId: string;
+  cadetId: string;
+  status: AttendanceStatus;
+  note?: string;
 }
 
-export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
-export type TaskStatus = 'todo' | 'in_progress' | 'done';
-export type TaskCategory =
-  | 'venue' | 'guests' | 'budget' | 'vendors' | 'attire'
-  | 'ceremony' | 'reception' | 'honeymoon' | 'legal' | 'beauty'
-  | 'music' | 'flowers' | 'food' | 'other';
+export interface FitnessTestResult {
+  id: string;
+  cadetId: string;
+  period: TestPeriod;
+  run3kSeconds?: number;
+  pushups?: number;
+  pullups?: number;
+  plankSeconds?: number;
+  burpees?: number;
+}
 
-export interface Task {
+export type MetricKey = 'run3kSeconds' | 'pushups' | 'pullups' | 'plankSeconds' | 'burpees';
+
+export interface TrainingWeek {
+  id: string;
+  weekNumber: number;
+  startDate: string;
+  endDate: string;
+  goals: string;
+  types: TrainingType[];
+  notes: string;
+}
+
+export interface MissionCompletion {
+  cadetId: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
+export interface WeekendMission {
   id: string;
   title: string;
-  description?: string;
-  category: TaskCategory;
-  priority: TaskPriority;
-  status: TaskStatus;
-  dueDate?: string;
-  completedDate?: string;
+  description: string;
+  videoUrl?: string;
+  date: string;
+  completions: MissionCompletion[];
 }
 
-export interface TimelineEvent {
+export interface ScoreEvent {
   id: string;
-  time: string;
-  endTime?: string;
-  title: string;
-  location?: string;
-  description?: string;
-  category: 'ceremony' | 'reception' | 'preparation' | 'transport' | 'photo' | 'other';
+  cadetId: string;
+  date: string;
+  type: ScoreEventType;
+  points: number;
+  note?: string;
+  refId?: string;
 }
 
-export interface SeatingTable {
+export interface CadetNote {
   id: string;
-  name: string;
-  capacity: number;
-  shape: 'round' | 'rectangular';
-  notes?: string;
+  cadetId: string;
+  date: string;
+  type: NoteType;
+  text: string;
 }
 
-export interface WeddingDetails {
-  brideName: string;
-  groomName: string;
-  weddingDate?: string;
-  ceremonyTime?: string;
-  venue?: string;
-  city?: string;
-  totalBudget: number;
+export interface ScoringRules {
+  present: number;
+  listener: number;
+  medical: number;
+  absent: number;
+  mission: number;
+  improvement: number;
+  helping: number;
+  leadership: number;
+  excellence: number;
 }
 
-export interface AppData {
-  weddingDetails: WeddingDetails;
-  guests: Guest[];
-  budgetItems: BudgetItem[];
-  vendors: Vendor[];
-  tasks: Task[];
-  timelineEvents: TimelineEvent[];
-  tables: SeatingTable[];
+export interface AppSettings {
+  appName: string;
+  subtitle: string;
+  managerName: string;
+  managerRole: string;
+  courseStart: string;
+  courseEnd: string;
+  scoring: ScoringRules;
+  levelLabels: Record<FitnessLevel, string>;
+  trainingTypeLabels: Record<TrainingType, string>;
+}
+
+export interface DbShape {
+  cadets: Cadet[];
+  sessions: TrainingSession[];
+  attendance: AttendanceRecord[];
+  fitnessTests: FitnessTestResult[];
+  trainingWeeks: TrainingWeek[];
+  missions: WeekendMission[];
+  scores: ScoreEvent[];
+  notes: CadetNote[];
+  settings: AppSettings;
 }
