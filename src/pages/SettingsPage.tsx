@@ -9,6 +9,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { NumberField, TextField } from '../components/ui/Field';
+import { CloudSyncCard } from '../components/settings/CloudSyncCard';
 
 const SCORING_LABELS: Record<keyof ScoringRules, string> = {
   present: `נוכחות (${STATUS_LABELS.present})`,
@@ -154,6 +155,8 @@ export function SettingsPage() {
             }}
           />
         </Card>
+
+        <CloudSyncCard />
       </div>
     </div>
   );

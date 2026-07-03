@@ -18,7 +18,18 @@
 
 ## טכנולוגיות
 
-React + TypeScript + Vite · Tailwind CSS 4 · Framer Motion · Recharts · React Router (HashRouter) · LocalStorage בתבנית Repository (`src/lib/db/repository.ts`) — מוכן להחלפה עתידית ל-Firebase/Supabase.
+React + TypeScript + Vite · Tailwind CSS 4 · Framer Motion · Recharts · React Router (HashRouter) · LocalStorage בתבנית Repository (`src/lib/db/repository.ts`), עם אפשרות מובנית למעבר לסנכרון ענן דרך Firestore.
+
+## סנכרון ענן (שיתוף נתונים בין כמה מכשירים/משתמשים)
+
+כברירת מחדל הנתונים נשמרים רק בדפדפן המקומי (LocalStorage). כדי לשתף נתונים בזמן אמת בין כמה אנשים:
+
+1. צרו פרויקט חינמי ב-[console.firebase.google.com](https://console.firebase.google.com), הפעילו **Firestore Database** (Production mode) ו-**Authentication → Email/Password**, והוסיפו משתמשים תחת Authentication → Users.
+2. ב-Project settings → Your apps → Web app, העתיקו את בלוק ה-`firebaseConfig`.
+3. במסך **הגדרות** באפליקציה עצמה, תחת "סנכרון ענן", הדביקו את הקונפיג ולחצו "חיבור", ואז התחברו עם אחד המשתמשים שיצרתם.
+4. העתיקו את התוכן של `firestore.rules` (בשורש הריפו) ל-Firebase Console → Firestore → Rules, כדי להגביל גישה למשתמשים מאומתים בלבד.
+
+לאחר החיבור, כל המכשירים המחוברים לאותו פרויקט Firebase רואים ומעדכנים את אותם הנתונים בזמן אמת. אפשר לבטל את הסנכרון בכל רגע וחזור לנתונים מקומיים דרך אותו מסך.
 
 ## הרצה מקומית
 

@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  AttendanceRecord,
   AttendanceStatus,
   Cadet,
   CadetNote,
@@ -15,48 +16,69 @@ import { uid } from '../id';
 import { todayISO } from '../date';
 import { STATUS_LABELS } from '../constants';
 import { createSeed } from './seed';
-import { FirestoreRepository } from './firestoreRepository';
-import type { CloudAuthState, FirebaseWebConfig } from '../cloud/firebaseCloud';
-import {
-  clearCloudConfig,
-  loadCloudConfig,
-  saveCloudConfig,
-  signInCloud,
-  signOutCloud,
-  watchCloudAuth,
-} from '../cloud/firebaseCloud';
+import type { FirebaseWebConfig } from '../cloud/firebaseCloud';
+import { getFirebase } from '../cloud/firebaseCloud';
 
-const STORAGE_KEY = 'platoon-fitness-db-v1';
+const DOC_PATH = { collection: 'platoons', doc: 'main' } as const;
 
 /**
- * Local-only backend. Same public method surface as FirestoreRepository
- * so RepositoryFacade can swap between them without any other file
- * (hooks, components) knowing which one is active.
+ * Firestore-backed twin of LocalStorageRepository. Same public method
+ * surface, same "whole-document" write model, so the swap in
+ * repository.ts needs no changes anywhere else in the app. Realtime
+ * sync comes from onSnapshot — every connected client (e.g. the two
+ * course officers) sees the other's changes live.
  */
-class LocalStorageRepository {
-  private db: DbShape;
+export class FirestoreRepository {
+  private db: DbShape = createSeed();
+  private ready = false;
   private listeners = new Set<() => void>();
+  private unsubscribeSnapshot: (() => void) | undefined;
+  private firestoreMod: Awaited<ReturnType<typeof getFirebase>>['firestoreMod'] | undefined;
+  private firestore: Awaited<ReturnType<typeof getFirebase>>['db'] | undefined;
 
-  constructor() {
-    this.db = this.load();
+  constructor(private config: FirebaseWebConfig, private onFatalError: (message: string) => void) {
+    void this.init();
   }
 
-  private load(): DbShape {
+  private async init(): Promise<void> {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw) as DbShape;
-    } catch {
-      // נתונים פגומים — נאתחל מחדש מנתוני הדמו
+      const { firestoreMod, db } = await getFirebase(this.config);
+      this.firestoreMod = firestoreMod;
+      this.firestore = db;
+      const ref = firestoreMod.doc(db, DOC_PATH.collection, DOC_PATH.doc);
+      this.unsubscribeSnapshot = firestoreMod.onSnapshot(
+        ref,
+        async (snap) => {
+          if (snap.exists()) {
+            this.db = snap.data() as DbShape;
+            this.ready = true;
+            this.notify();
+          } else {
+            const seed = createSeed();
+            await firestoreMod.setDoc(ref, seed);
+          }
+        },
+        (err) => this.onFatalError(err.message),
+      );
+    } catch (err) {
+      this.onFatalError(err instanceof Error ? err.message : 'שגיאת חיבור לענן');
     }
-    const seed = createSeed();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-    return seed;
+  }
+
+  dispose(): void {
+    this.unsubscribeSnapshot?.();
+  }
+
+  private notify(): void {
+    this.listeners.forEach((listener) => listener());
   }
 
   private commit(next: DbShape): void {
     this.db = next;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    this.listeners.forEach((listener) => listener());
+    this.notify();
+    if (!this.firestoreMod || !this.firestore) return;
+    const ref = this.firestoreMod.doc(this.firestore, DOC_PATH.collection, DOC_PATH.doc);
+    this.firestoreMod.setDoc(ref, next).catch((err: Error) => this.onFatalError(err.message));
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -67,7 +89,7 @@ class LocalStorageRepository {
   };
 
   getSnapshot = (): DbShape => this.db;
-  isReady = (): boolean => true;
+  isReady = (): boolean => this.ready;
 
   addCadet = (input: Omit<Cadet, 'id'>): Cadet => {
     const cadet: Cadet = { ...input, id: uid('cadet') };
@@ -124,7 +146,7 @@ class LocalStorageRepository {
     const session = this.db.sessions.find((s) => s.id === sessionId);
     if (!session) return;
     const existing = this.db.attendance.find((a) => a.sessionId === sessionId && a.cadetId === cadetId);
-    const record = existing
+    const record: AttendanceRecord = existing
       ? { ...existing, status, note: note !== undefined ? note : existing.note }
       : { id: uid('att'), sessionId, cadetId, status, note };
     const attendance = existing
@@ -303,172 +325,3 @@ class LocalStorageRepository {
     this.commit(createSeed());
   };
 }
-
-type Backend = LocalStorageRepository | FirestoreRepository;
-
-/**
- * Public facade. Every hook in the app talks to `repository` and never
- * knows whether data lives in LocalStorage or Firestore — the facade
- * swaps the active backend in place and re-notifies subscribers, and
- * additionally exposes a `cloud` namespace to drive the Settings UI and
- * the login gate.
- */
-class RepositoryFacade {
-  private active: Backend = new LocalStorageRepository();
-  private dbListeners = new Set<() => void>();
-  private authListeners = new Set<() => void>();
-  private authState: CloudAuthState = { configured: false, status: 'signed-out' };
-  private config: FirebaseWebConfig | undefined = loadCloudConfig();
-  private unwatchAuth: (() => void) | undefined;
-  private unsubActiveBackend: (() => void) | undefined;
-
-  constructor() {
-    this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
-    if (this.config) {
-      this.authState = { configured: true, status: 'signing-in' };
-      void this.attachCloudAuthWatcher(this.config);
-    }
-  }
-
-  private notifyDb(): void {
-    this.dbListeners.forEach((l) => l());
-  }
-
-  private notifyAuth(): void {
-    this.authListeners.forEach((l) => l());
-  }
-
-  private async attachCloudAuthWatcher(config: FirebaseWebConfig): Promise<void> {
-    try {
-      this.unwatchAuth = await watchCloudAuth(config, (email) => {
-        if (email) {
-          this.authState = { configured: true, status: 'signed-in', email };
-          this.switchToCloud(config);
-        } else {
-          this.authState = { configured: true, status: 'signed-out' };
-          this.switchToLocal();
-        }
-        this.notifyAuth();
-      });
-    } catch (err) {
-      this.authState = {
-        configured: true,
-        status: 'error',
-        error: err instanceof Error ? err.message : 'שגיאת חיבור לענן',
-      };
-      this.notifyAuth();
-    }
-  }
-
-  private switchToCloud(config: FirebaseWebConfig): void {
-    if (this.active instanceof FirestoreRepository) return;
-    this.unsubActiveBackend?.();
-    this.active = new FirestoreRepository(config, (message) => {
-      this.authState = { ...this.authState, status: 'error', error: message };
-      this.notifyAuth();
-    });
-    this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
-    this.notifyDb();
-  }
-
-  private switchToLocal(): void {
-    if (this.active instanceof LocalStorageRepository) return;
-    this.unsubActiveBackend?.();
-    (this.active as FirestoreRepository).dispose();
-    this.active = new LocalStorageRepository();
-    this.unsubActiveBackend = this.active.subscribe(() => this.notifyDb());
-    this.notifyDb();
-  }
-
-  // ---- data API (delegates to whichever backend is active) ----
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.dbListeners.add(listener);
-    return () => {
-      this.dbListeners.delete(listener);
-    };
-  };
-
-  getSnapshot = (): DbShape => this.active.getSnapshot();
-  isCloudDataReady = (): boolean => this.active.isReady();
-
-  addCadet: LocalStorageRepository['addCadet'] = (input) => this.active.addCadet(input);
-  updateCadet: LocalStorageRepository['updateCadet'] = (id, patch) => this.active.updateCadet(id, patch);
-  deleteCadet: LocalStorageRepository['deleteCadet'] = (id) => this.active.deleteCadet(id);
-  addSession: LocalStorageRepository['addSession'] = (input) => this.active.addSession(input);
-  updateSession: LocalStorageRepository['updateSession'] = (id, patch) => this.active.updateSession(id, patch);
-  deleteSession: LocalStorageRepository['deleteSession'] = (id) => this.active.deleteSession(id);
-  setAttendance: LocalStorageRepository['setAttendance'] = (sessionId, cadetId, status, note) =>
-    this.active.setAttendance(sessionId, cadetId, status, note);
-  removeAttendance: LocalStorageRepository['removeAttendance'] = (sessionId, cadetId) =>
-    this.active.removeAttendance(sessionId, cadetId);
-  setAttendanceNote: LocalStorageRepository['setAttendanceNote'] = (recordId, note) =>
-    this.active.setAttendanceNote(recordId, note);
-  upsertFitnessTest: LocalStorageRepository['upsertFitnessTest'] = (cadetId, period, values) =>
-    this.active.upsertFitnessTest(cadetId, period, values);
-  addTrainingWeek: LocalStorageRepository['addTrainingWeek'] = (input) => this.active.addTrainingWeek(input);
-  updateTrainingWeek: LocalStorageRepository['updateTrainingWeek'] = (id, patch) =>
-    this.active.updateTrainingWeek(id, patch);
-  deleteTrainingWeek: LocalStorageRepository['deleteTrainingWeek'] = (id) => this.active.deleteTrainingWeek(id);
-  addMission: LocalStorageRepository['addMission'] = (input) => this.active.addMission(input);
-  updateMission: LocalStorageRepository['updateMission'] = (id, patch) => this.active.updateMission(id, patch);
-  deleteMission: LocalStorageRepository['deleteMission'] = (id) => this.active.deleteMission(id);
-  setMissionCompletion: LocalStorageRepository['setMissionCompletion'] = (missionId, cadetId, completed) =>
-    this.active.setMissionCompletion(missionId, cadetId, completed);
-  addScoreEvent: LocalStorageRepository['addScoreEvent'] = (input) => this.active.addScoreEvent(input);
-  deleteScoreEvent: LocalStorageRepository['deleteScoreEvent'] = (id) => this.active.deleteScoreEvent(id);
-  addNote: LocalStorageRepository['addNote'] = (input) => this.active.addNote(input);
-  deleteNote: LocalStorageRepository['deleteNote'] = (id) => this.active.deleteNote(id);
-  updateSettings: LocalStorageRepository['updateSettings'] = (settings) => this.active.updateSettings(settings);
-  exportJson = (): string => this.active.exportJson();
-  importJson = (json: string): boolean => this.active.importJson(json);
-  resetToSeed = (): void => this.active.resetToSeed();
-
-  // ---- cloud sync control (drives Settings UI + login gate) ----
-
-  cloud = {
-    subscribe: (listener: () => void): (() => void) => {
-      this.authListeners.add(listener);
-      return () => this.authListeners.delete(listener);
-    },
-    getSnapshot: (): CloudAuthState => this.authState,
-
-    configure: async (config: FirebaseWebConfig): Promise<void> => {
-      saveCloudConfig(config);
-      this.config = config;
-      this.authState = { configured: true, status: 'signing-in' };
-      this.notifyAuth();
-      this.unwatchAuth?.();
-      await this.attachCloudAuthWatcher(config);
-    },
-
-    signIn: async (email: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> => {
-      if (!this.config) return { ok: false, error: 'לא הוגדר חיבור לענן' };
-      this.authState = { ...this.authState, status: 'signing-in' };
-      this.notifyAuth();
-      const result = await signInCloud(this.config, email, password);
-      if (!result.ok) {
-        this.authState = { configured: true, status: 'error', error: result.error };
-        this.notifyAuth();
-      }
-      return result;
-    },
-
-    signOut: async (): Promise<void> => {
-      if (!this.config) return;
-      await signOutCloud(this.config);
-    },
-
-    disable: (): void => {
-      this.unwatchAuth?.();
-      clearCloudConfig();
-      this.config = undefined;
-      this.authState = { configured: false, status: 'signed-out' };
-      this.switchToLocal();
-      this.notifyAuth();
-    },
-  };
-}
-
-export const repository = new RepositoryFacade();
-export type { FirebaseWebConfig, CloudAuthState } from '../cloud/firebaseCloud';

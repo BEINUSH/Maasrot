@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// כל אימות (Auth) בפרויקט הזה נעשה ידנית ע"י בעל הפרויקט ב-Firebase Console
+// (Authentication → Users → Add user) — לכן כל משתמש מאומת נחשב מהימן,
+// ואין צורך ברשימת דוא"ל מורשים נפרדת.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /platoons/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
