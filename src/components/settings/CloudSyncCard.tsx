@@ -67,25 +67,29 @@ function AnonymousSyncStatus() {
             שימו לב: זהו שיתוף ללא סיסמה — כל מי שמחזיק בקישור הזה יכול לראות ולערוך את הנתונים. למי
             שרוצה הגנה עם משתמש/סיסמה אמיתיים, אפשר לעבור ל-Firebase למטה.
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" icon={CloudOff} onClick={stop}>
-              הפסקת שיתוף
-            </Button>
-            <Button variant="secondary" onClick={() => setShowFirebaseForm((v) => !v)}>
-              {showFirebaseForm ? 'סגירה' : 'עבור להתחברות מאובטחת (Firebase)'}
-            </Button>
-          </div>
         </>
       )}
       {auth.status === 'error' && (
-        <div className="rounded-xl bg-lvlc/10 border border-lvlc/30 px-4 py-3 text-sm font-semibold text-lvlc">
+        <div className="rounded-xl bg-lvlc/10 border border-lvlc/30 px-4 py-3 text-sm font-semibold text-lvlc mb-4">
           לא הצלחתי להקים סנכרון ענן אוטומטי ({auth.error}). האפליקציה ממשיכה לעבוד עם נתונים מקומיים בלבד.
         </div>
       )}
       {auth.status === 'idle' && (
-        <p className="text-sm text-ink3">
+        <p className="text-sm text-ink3 mb-4">
           השיתוף הופסק — הנתונים נשמרים רק במכשיר הזה. אפשר להפעיל מחדש ע"י רענון העמוד.
         </p>
+      )}
+      {auth.status !== 'connecting' && (
+        <div className="flex flex-wrap gap-2">
+          {auth.status === 'connected' && auth.shareLink && (
+            <Button variant="ghost" icon={CloudOff} onClick={stop}>
+              הפסקת שיתוף
+            </Button>
+          )}
+          <Button variant="secondary" onClick={() => setShowFirebaseForm((v) => !v)}>
+            {showFirebaseForm ? 'סגירה' : 'עבור להתחברות מאובטחת (Firebase)'}
+          </Button>
+        </div>
       )}
       {showFirebaseForm && <FirebaseConfigureForm />}
     </Card>
