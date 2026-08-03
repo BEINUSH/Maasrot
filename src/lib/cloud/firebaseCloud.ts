@@ -41,7 +41,7 @@ async function loadFirebaseModules(config: FirebaseWebConfig) {
   ]);
   const app = getApps().length ? getApp() : initializeApp(config);
   const auth = authMod.getAuth(app);
-  const db = firestoreMod.getFirestore(app);
+  const db = firestoreMod.initializeFirestore(app, { ignoreUndefinedProperties: true });
   return { authMod, firestoreMod, auth, db };
 }
 
