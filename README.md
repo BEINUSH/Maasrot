@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# אתר הספורט הגדודי — מערך הכושר הפלוגתי
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+מערכת ניהול הכושר של קורס הקצינים · פלוגה א'
 
-Currently, two official plugins are available:
+מנהל המערכת: **אריאל בן עמי** — קה"ג, מתרגל פלוגה א'
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## מה יש במערכת
 
-## React Compiler
+- **לוח בקרה** — התקדמות קורס, נוכחות, ניקוד, ממוצעי מבחנים, גרפים ופעילות אחרונה
+- **חניכים** — 40 חניכים ב-3 צוותים (ירוק/כחול/כתום), כרטיסים, סינון, מיון, חיפוש ופרופיל מלא הניתן לעריכה
+- **נוכחות** — מפגשי אימון עם 4 סטטוסים: נוכח (+5), מאזין (+2), פטור רפואי (0), נעדר (−5) — מסונכרן אוטומטית לניקוד
+- **מבחני כושר** — פתיחה/אמצע/סיום: ריצת 3 ק"מ, שכיבות סמיכה, עליות מתח, פלאנק, ברפיז + השוואות מגמה
+- **תוכנית אימונים** — תכנון שבועי עם מטרות וסוגי אימון
+- **משימות סופ"ש** — רשימות השלמה עם ניקוד אוטומטי
+- **טבלת ניקוד** — Leaderboard עם מדליות וניקוד ידני (מנהיגות, עזרה לחברים, מצטיין…)
+- **דוחות** — ייצוא Excel / CSV / PDF + תמונת מצב מפקדים
+- **הגדרות** — כללי ניקוד, תוויות, גיבוי/שחזור JSON ואיפוס לנתוני דמו
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## טכנולוגיות
 
-## Expanding the ESLint configuration
+React + TypeScript + Vite · Tailwind CSS 4 · Framer Motion · Recharts · React Router (HashRouter) · LocalStorage בתבנית Repository (`src/lib/db/repository.ts`), עם אפשרות מובנית למעבר לסנכרון ענן דרך Firestore.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## סנכרון ענן (שיתוף נתונים בין כמה מכשירים/משתמשים)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+כברירת מחדל הנתונים נשמרים רק בדפדפן המקומי (LocalStorage). כדי לשתף נתונים בזמן אמת בין כמה אנשים:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+1. צרו פרויקט חינמי ב-[console.firebase.google.com](https://console.firebase.google.com), הפעילו **Firestore Database** (Production mode) ו-**Authentication → Email/Password**, והוסיפו משתמשים תחת Authentication → Users.
+2. ב-Project settings → Your apps → Web app, העתיקו את בלוק ה-`firebaseConfig`.
+3. במסך **הגדרות** באפליקציה עצמה, תחת "סנכרון ענן", הדביקו את הקונפיג ולחצו "חיבור", ואז התחברו עם אחד המשתמשים שיצרתם.
+4. העתיקו את התוכן של `firestore.rules` (בשורש הריפו) ל-Firebase Console → Firestore → Rules, כדי להגביל גישה למשתמשים מאומתים בלבד.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+לאחר החיבור, כל המכשירים המחוברים לאותו פרויקט Firebase רואים ומעדכנים את אותם הנתונים בזמן אמת. אפשר לבטל את הסנכרון בכל רגע וחזור לנתונים מקומיים דרך אותו מסך.
+
+## הרצה מקומית
+
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+בנייה: `npm run build` (כולל בדיקת TypeScript).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## פריסה ל-GitHub Pages
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+כל push ל-branch הראשי מפעיל את ה-workflow ‏`.github/workflows/deploy-pages.yml` שבונה ומפרסם ל-GitHub Pages.
+
+**הגדרה חד-פעמית (ידנית):** ב-GitHub עברו אל **Settings → Pages → Source** ובחרו **GitHub Actions**. בלי זה הפריסה לא תעבוד.
+
+> שימו לב: ה-`base` ב-`vite.config.ts` חייב להתאים בדיוק לשם הריפו (`/Maasrot/`). אם משנים את שם הריפו — יש לעדכן אותו בהתאם.
