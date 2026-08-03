@@ -43,8 +43,7 @@ export function SettingsPage() {
     reader.onload = () => {
       const ok = importJson(String(reader.result));
       if (ok) {
-        window.alert('הנתונים יובאו בהצלחה. רענן את העמוד אם משהו לא מתעדכן.');
-        window.location.reload();
+        window.alert('הנתונים יובאו בהצלחה.');
       } else {
         window.alert('קובץ לא תקין — הייבוא בוטל.');
       }
@@ -55,7 +54,6 @@ export function SettingsPage() {
   const reset = () => {
     if (window.confirm('לאפס את כל הנתונים לנתוני הדמו המקוריים? פעולה זו תמחק את כל השינויים.')) {
       resetToSeed();
-      window.location.reload();
     }
   };
 
